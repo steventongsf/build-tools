@@ -24,8 +24,14 @@ PRIVATEDIR = CACHEDIR + "/private/"
 
 def download_file(filename,url)
   return if exclude?(url)
-  puts "INFO Downloading "+filename
+  debug "Downloaded "+filename
   File.write(filename, Net::HTTP.get(URI.parse(url)))
+  if File.size?(filename) < 1024
+    debug "Deleting "+filename + ": "+File.size?(filename).to_s
+    File.delete(filename)
+  else
+    debug "Downloaded "+filename
+  end
 end
 # get artifact attributes from m2 cache file
 def get_coordinates(path)
@@ -54,6 +60,7 @@ def get_coordinates(path)
 end
 # get artifacts from the m2 cache
 def get_maven_artifacts()
+  info "Reading artifacts from local cache: "+REPODIR
   artifacts = []
   Find.find(REPODIR) do |path|
     if $cfg["extensions"].include?(File.extname(path))
@@ -78,20 +85,11 @@ def get_public_md5()
   $artifacts.each {|a|
     local_file = PUBLICDIR+File.basename(a[:file])
     if !File.exists?(local_file)
-      #File.write(local_file, Net::HTTP.get(URI.parse(a[:public_url])) )
       download_file(local_file,a[:public_url])
-      #puts "INFO downloaded to "+local_file
-
     end
-    p File.size?(local_file)
     if File.exist?(local_file) 
-      if File.size?(local_file) < 1024
-        File.delete(local_file)
-        puts "INFO File not valid: "+local_file
-      else
-        a[:public_md5] = Digest::MD5.file(local_file).hexdigest
-        a[:public_file] = local_file
-      end
+      a[:public_md5] = Digest::MD5.file(local_file).hexdigest
+      a[:public_file] = local_file
     end
   }
 end
@@ -99,11 +97,12 @@ def get_private_md5()
   $artifacts.each {|a|
     local_file = PRIVATEDIR+File.basename(a[:file])
     if !File.exists?(local_file)
-      #File.write(local_file, Net::HTTP.get(URI.parse(a[:private_url])) )
       download_file(local_file,a[:private_url])
     end
-    a[:private_md5] = Digest::MD5.file(local_file).hexdigest
-    a[:private_file] = local_file
+    if File.exist?(local_file) 
+      a[:private_md5] = Digest::MD5.file(local_file).hexdigest
+      a[:private_file] = local_file
+    end
   }
 end
 
@@ -166,7 +165,11 @@ def main
   # so if an artifact exists in a public repository no action is needed
   # if an artifact does not exist in a public repository then,
   #   we should create a list for publishing to private repo
-  if !$options[:diff].nil? && !$options[:diff].nil? && $options[:diff] && $options[:type] == "missing_from_public"
+  if !$options[:diff].nil? && 
+        $options[:diff] && 
+        $options[:type] == "missing_from_public"
+    info "Reporting missing from public"
+    info "artifacts count: #{$artifacts.size}"
     $artifacts.each {|a| 
       puts a if a[:file] =~ /db2jcc/ || a[:file] =~ /oswego/
       if !a.has_key?(:public_file) 
@@ -174,11 +177,19 @@ def main
       end
     }
     $pub_queue.each {|a|
-      puts "WARNING missing: "+a[:file]
+      warning "missing from public: "+a[:file]
       p a
     }
   end
 end
-
+def warning(m)
+  puts "WARNING "+m
+end
+def info(m)
+  puts "INFO "+m
+end
+def debug(m)
+  puts "DEBUG "+m
+end
 main()
 
